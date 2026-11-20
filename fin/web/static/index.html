@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>finintel</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="finintel">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1d2433">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1d2433;--muted:#5b6475;--line:#e6e8ec;--pos:#1d6b3a;--neg:#a12a2a;
+      --accent:#1f4e8c;--warn:#f9eeda}
+*{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--ink);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+nav{display:flex;gap:4px} nav button{background:none;border:0;color:#c9cfdb;padding:8px 12px;border-radius:8px;font-size:14px;cursor:pointer}
+nav button.on{background:#ffffff1f;color:#fff}
+.spacer{flex:1} #syncbtn{background:#fff;color:var(--ink);border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+#syncinfo{color:#c9cfdb;font-size:12px}
+main{max-width:1100px;margin:0 auto;padding:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:18px}
+.kpi .l{color:var(--muted);font-size:13px} .kpi .v{font-size:26px;font-weight:650;margin-top:6px;font-variant-numeric:tabular-nums}
+h2{font-size:16px;margin:0 0 12px} .muted{color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px} th{text-align:left;color:var(--muted);font-weight:500;border-bottom:1px solid var(--line);padding:8px 6px}
+td{padding:8px 6px;border-bottom:1px solid var(--line)} td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.pos{color:var(--pos)} .neg{color:var(--neg)}
+.bar{height:8px;background:#e7eef8;border-radius:4px;overflow:hidden} .bar>div{height:100%;background:var(--accent)}
+.note{background:var(--warn);border-radius:8px;padding:10px 12px;font-size:14px;margin:8px 0}
+.callout{background:#e5f4e4;border-radius:10px;padding:14px;font-size:15px;margin:10px 0}
+form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
+label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input,select{padding:7px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+button.small{padding:7px 12px;border:0;border-radius:6px;background:var(--ink);color:#fff;cursor:pointer}
+button.del{background:none;border:0;color:var(--neg);cursor:pointer}
+.tab{display:none} .tab.on{display:block}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px} @media(max-width:800px){.row2{grid-template-columns:1fr}}
+canvas{max-height:300px}
+/* phone layout */
+.card table{display:block;overflow-x:auto;white-space:nowrap}
+@media(max-width:640px){
+  header{padding:10px 12px calc(10px) 12px;padding-top:max(10px, env(safe-area-inset-top));gap:10px}
+  nav{order:3;width:100%;overflow-x:auto} nav button{flex:1;white-space:nowrap}
+  .spacer{display:none} #syncinfo{display:none}
+  #syncbtn,#applebtn{padding:7px 10px;font-size:13px}
+  main{padding:12px}
+  .grid{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi .v{font-size:19px} .card{padding:14px}
+  form label{flex:1 1 45%} input,select{width:100%;font-size:16px}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head><body>
+<header>
+  <h1>finintel</h1>
+  <nav id="nav">
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="cashflow">Cash flow</button>
+    <button data-tab="plan">Plan</button>
+    <button data-tab="portfolio">Portfolio</button>
+    <button data-tab="settings">Rules</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="syncinfo"></span>
+  <button id="applebtn" title="Imports Apple Card statement PDFs saved in the finintel\imports folder" style="background:#ffffff1f;color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer">Import Apple Card</button>
+  <button id="syncbtn">Sync now</button>
+</header>
+<main>
+  <section class="tab on" id="tab-overview">
+    <div class="grid" id="kpis"></div>
+    <div id="relink"></div>
+    <div class="card"><h2>Accounts</h2><table id="accounts"></table>
+      <p class="muted">Credit card "Current" = what you owe. Balances as of <span id="asof">-</span>.</p></div>
+  </section>
+
+  <section class="tab" id="tab-cashflow">
+    <div class="card">
+      <h2>Income vs spending</h2>
+      <p class="muted" id="cfmeta"></p>
+      <canvas id="cfchart"></canvas>
+      <table id="cftable" style="margin-top:12px"></table>
+    </div>
+    <div class="row2">
+      <div class="card"><h2>Where the money goes <span class="muted">(avg / month)</span></h2><table id="cats"></table></div>
+      <div class="card"><h2>Recurring</h2><table id="recurring"></table>
+        <p class="muted">Detected from repeat charges - check these.</p></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-plan">
+    <div class="card">
+      <h2>How much can you invest?</h2>
+      <p class="muted">A calculation from your data - not financial advice.</p>
+      <label style="max-width:320px">Emergency fund: <b id="efval">6</b> months of costs
+        <input type="range" id="ef" min="3" max="6" value="6"></label>
+      <div class="grid" id="plankpis" style="margin-top:14px"></div>
+      <div id="callout"></div><div id="notes"></div>
+    </div>
+    <div class="card"><h2>Outlook</h2><canvas id="outchart"></canvas><table id="outlook" style="margin-top:12px"></table>
+      <p class="muted">Free = balance minus later planned expenses minus the emergency fund.</p></div>
+    <div class="card"><h2>Planned expenses</h2><table id="planned"></table>
+      <form id="planform">
+        <label>Name<input name="name" required placeholder="Car insurance renewal"></label>
+        <label>Amount<input name="amount" type="number" step="0.01" min="0.01" required></label>
+        <label>Due date<input name="due_date" type="date" required></label>
+        <label>Monthly installments<input name="repeat" type="number" min="1" max="36" value="1" style="width:90px"></label>
+        <label>Category<input name="category" placeholder="TRANSPORTATION"></label>
+        <button class="small">Add</button>
+      </form>
+      <p class="muted">When a due date passes, it is treated as paid. Move the date if it slips.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-portfolio">
+    <div class="grid" id="pfkpis"></div>
+    <div class="card"><h2>Allocation <span class="muted">(vs your targets, cash excluded)</span></h2>
+      <table id="pfalloc"></table><div id="pfwarn"></div></div>
+    <div class="card"><h2>Positions</h2><table id="pfpos"></table></div>
+    <div class="card"><h2>Investing new money</h2>
+      <p class="muted">How to split new money toward your targets without selling anything. Not financial advice.</p>
+      <label style="max-width:320px">Amount <input type="number" id="pfnew" min="0" step="100" value="0"></label>
+      <table id="pfplan" style="margin-top:12px"></table></div>
+    <div class="card"><h2>Risk check <span class="muted">(includes the amount above as a what-if)</span></h2>
+      <div class="grid" id="rkkpis"></div>
+      <table id="rkstress" style="margin-top:12px"></table><div id="rkflags"></div>
+      <p class="muted" id="rkvol"></p></div>
+  </section>
+
+  <section class="tab" id="tab-settings">
+    <div class="card"><h2>Rules</h2>
+      <p class="muted">Relabel transactions. A rule matches when all its words appear in the description. First matching rule wins.</p>
+      <table id="rules"></table>
+      <form id="ruleform">
+        <label>Words to match<input name="pattern" required placeholder="landlord"></label>
+        <label>Category<input name="category" required placeholder="RENT_AND_UTILITIES"></label>
+        <label>Label<input name="label" placeholder="Rent"></label>
+        <label>Min $<input name="min_amount" type="number" step="0.01" style="width:90px"></label>
+        <label>Max $<input name="max_amount" type="number" step="0.01" style="width:90px"></label>
+        <label>Direction<select name="direction"><option value="">both</option><option value="out">money out</option><option value="in">money in</option></select></label>
+        <button class="small">Add rule</button>
+      </form>
+    </div>
+  </section>
+</main>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const fmt = (x) => x == null ? "-" : x.toLocaleString("en-US", {style:"currency", currency:"USD"});
+function el(tag, text, cls){ const e = document.createElement(tag); if(text != null) e.textContent = text; if(cls) e.className = cls; return e; }
+function table(t, headers, rows){
+  t.innerHTML = "";
+  const tr = el("tr"); headers.forEach(h => { const th = el("th", h[0]); if(h[1]) th.className = "n"; tr.appendChild(th); });
+  t.appendChild(tr);
+  rows.forEach(r => { const row = el("tr"); r.forEach((c, i) => {
+      const td = (c instanceof Node) ? (()=>{const d=el("td"); d.appendChild(c); return d;})() : el("td", c);
+      if(headers[i] && headers[i][1]) td.classList.add("n"); row.appendChild(td); }); t.appendChild(row); });
+}
+async function api(path, opts={}){
+  const r = await fetch(path, {...opts, headers: {"Content-Type":"application/json", "X-Fin-Token": TOKEN, ...(opts.headers||{})}});
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || r.status));
+  return j;
+}
+function kpi(label, value, cls){ const d = el("div", null, "card kpi"); d.appendChild(el("div", label, "l")); d.appendChild(el("div", value, "v " + (cls||""))); return d; }
+
+// ---- tabs
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab));
+});
+
+// ---- overview
+async function loadOverview(){
+  const o = await api("/api/overview");
+  const k = $("kpis"); k.innerHTML = "";
+  k.append(kpi("Net cash", fmt(o.net_cash), o.net_cash < 0 ? "neg" : ""), kpi("Cash (checking + savings)", fmt(o.cash)),
+           kpi("Owed on cards", fmt(o.card_owed)), kpi("Investments", fmt(o.investments)));
+  $("asof").textContent = o.balances_as_of ? new Date(o.balances_as_of + (o.balances_as_of.endsWith("Z")?"":"Z")).toLocaleString() : "-";
+  $("syncinfo").textContent = o.last_sync ? "Last sync " + new Date(o.last_sync + (o.last_sync.endsWith("Z")?"":"Z")).toLocaleString() : "";
+  $("relink").innerHTML = "";
+  if(o.needs_relink.length) $("relink").appendChild(el("div", "Needs re-login: " + o.needs_relink.join(", ") + " - run `fin plaid link`.", "note"));
+  table($("accounts"), [["Institution"],["Account"],["Type"],["Mask"],["Current",1],["Available",1],["Records",1]],
+        o.accounts.map(a => [a.institution, a.name, a.type, a.mask ? "..." + a.mask : "", fmt(a.current) + (a.estimated ? " (est.)" : ""), fmt(a.available), String(a.count)]));
+}
+
+// ---- cash flow + plan
+let cfChart, outChart;
+async function loadCashflow(){
+  const c = await api("/api/cashflow?ef_months=" + $("ef").value);
+  $("cfmeta").textContent = "Months used: " + c.months_used.join(", ") + (c.partial ? " (less than a full month of history - rough)" : "") +
+    ". " + c.internal_transfers + " transfers between your own accounts excluded." +
+    (c.this_month ? " This month so far: income " + fmt(c.this_month.income) + ", spending " + fmt(c.this_month.spending) + "." : "");
+  const labels = c.months.map(m => m.key);
+  if(cfChart) cfChart.destroy();
+  cfChart = new Chart($("cfchart"), {type:"bar", data:{labels, datasets:[
+    {label:"Income", data:c.months.map(m => m.income), backgroundColor:"#2f8a52"},
+    {label:"Spending", data:c.months.map(m => m.spending), backgroundColor:"#c0504d"},
+    {label:"Net", data:c.months.map(m => m.net), backgroundColor:"#1f4e8c"}]},
+    options:{responsive:true, plugins:{legend:{position:"bottom"}}}});
+  table($("cftable"), [["Month"],["Income",1],["Spending",1],["Money in*",1],["Money out*",1],["Net",1]],
+    c.months.concat([{...c.average, key:"Average"}]).map(m => [m.key, fmt(m.income), fmt(m.spending), fmt(m.money_in), fmt(m.money_out), fmt(m.net)]));
+  const max = Math.max(...c.categories.map(x => x.amount), 1);
+  table($("cats"), [["Category"],["Per month",1],[""]], c.categories.map(x => {
+    const b = el("div", null, "bar"); const f = el("div"); f.style.width = (x.amount / max * 100) + "%"; b.appendChild(f);
+    return [x.label, fmt(x.amount), b]; }));
+  table($("recurring"), [["Merchant"],["How often"],["Amount",1],["Next"]],
+    c.recurring.filter(r => r.active).map(r => [(r.direction === "in" ? "+ " : "") + r.merchant, r.cadence, fmt(r.amount), r.next]));
+
+  // plan
+  const p = c.plan; $("efval").textContent = p.ef_months;
+  const pk = $("plankpis"); pk.innerHTML = "";
+  pk.append(kpi("Monthly earned income", fmt(p.monthly_income)),
+            kpi("Monthly costs (excl. tuition & trips)", fmt(p.monthly_need)),
+            kpi("Monthly surplus", fmt(p.monthly_surplus), p.monthly_surplus < 0 ? "neg" : "pos"),
+            kpi("Emergency fund target", fmt(p.ef_target)),
+            kpi("Planned expenses", fmt(p.planned_total)),
+            kpi("Can invest now", fmt(p.investable_now)));
+  const o = c.outlook; $("callout").innerHTML = "";
+  $("callout").appendChild(el("div", o.invest_from
+      ? "Investing can start around " + o.invest_from + ": about " + fmt(o.invest_from_free) + " free then, plus ~" + fmt(Math.max(p.monthly_surplus,0)) + "/month after."
+      : "Investing doesn't start within the outlook period at this pace.", "callout"));
+  $("notes").innerHTML = ""; p.notes.concat(o.warnings).forEach(n => $("notes").appendChild(el("div", n, "note")));
+  if(outChart) outChart.destroy();
+  outChart = new Chart($("outchart"), {type:"line", data:{labels:o.months.map(m => m.key), datasets:[
+    {label:"End balance", data:o.months.map(m => m.end_balance), borderColor:"#1f4e8c", tension:.2},
+    {label:"Free beyond safety money", data:o.months.map(m => m.free), borderColor:"#2f8a52", borderDash:[5,4], tension:.2}]},
+    options:{responsive:true, plugins:{legend:{position:"bottom"}}}});
+  table($("outlook"), [["Month"],["Surplus",1],["Planned",1],["End balance",1],["Free",1],["Paying"]],
+    o.months.map(m => [m.key, fmt(m.surplus), fmt(-m.planned), fmt(m.end_balance), fmt(m.free), m.items.join(", ")]));
+}
+$("ef").oninput = () => { $("efval").textContent = $("ef").value; };
+$("ef").onchange = () => loadCashflow().catch(showErr);
+
+// ---- planned
+async function loadPlanned(){
+  const rows = await api("/api/planned");
+  table($("planned"), [["Due"],["Name"],["Amount",1],["Category"],[""]], rows.map(p => {
+    const b = el("button", "delete", "del"); b.onclick = async () => { if(confirm("Delete " + p.name + "?")){ await api("/api/planned/" + p.id, {method:"DELETE"}); refreshAll(); } };
+    return [p.due_date + (p.past ? " (past)" : ""), p.name, fmt(p.amount), p.category || "", b]; }));
+}
+$("planform").onsubmit = async (e) => { e.preventDefault(); const f = new FormData(e.target);
+  try { await api("/api/planned", {method:"POST", body: JSON.stringify({name:f.get("name"), amount:f.get("amount"), due_date:f.get("due_date"),
+         repeat: Number(f.get("repeat")||1), category: f.get("category") || null})}); e.target.reset(); refreshAll(); } catch(err){ showErr(err); } };
+
+// ---- rules
+async function loadRules(){
+  const rows = await api("/api/rules");
+  table($("rules"), [["#"],["Words"],["Category"],["Label"],["Amount"],["Direction"],[""]], rows.map(r => {
+    const b = el("button", "delete", "del"); b.onclick = async () => { if(confirm("Delete rule '" + r.pattern + "'?")){ await api("/api/rules/" + r.id, {method:"DELETE"}); refreshAll(); } };
+    const amt = (r.min_amount != null || r.max_amount != null) ? (r.min_amount ?? 0) + " - " + (r.max_amount ?? "any") : "any";
+    return [String(r.id), r.pattern, r.category, r.label || "", amt, r.direction || "both", b]; }));
+}
+$("ruleform").onsubmit = async (e) => { e.preventDefault(); const f = new FormData(e.target); const num = (v) => v === "" ? null : v;
+  try { await api("/api/rules", {method:"POST", body: JSON.stringify({pattern:f.get("pattern"), category:f.get("category"), label:f.get("label") || null,
+         min_amount:num(f.get("min_amount")), max_amount:num(f.get("max_amount")), direction:f.get("direction") || null})}); e.target.reset(); refreshAll(); } catch(err){ showErr(err); } };
+
+// ---- sync
+$("syncbtn").onclick = async () => {
+  const b = $("syncbtn"); b.disabled = true; b.textContent = "Syncing...";
+  try { const r = await api("/api/sync", {method:"POST"});
+    const errs = [].concat(r.plaid || [], r.snaptrade || []).filter(x => x.error).map(x => (x.institution || "SnapTrade") + ": " + x.error);
+    if(errs.length) alert("Sync finished with problems:\n" + errs.join("\n"));
+    await refreshAll(); } catch(err){ showErr(err); }
+  b.disabled = false; b.textContent = "Sync now";
+};
+$("applebtn").onclick = async () => {
+  const b = $("applebtn"); b.disabled = true; b.textContent = "Importing...";
+  try { const r = await api("/api/import/apple-card", {method:"POST"});
+    alert(r.files.length ? r.files.map(f => f.file + ": " + f.added + " new of " + f.lines).join("\n")
+                         : (r.message || "Nothing to import."));
+    await refreshAll(); } catch(err){ showErr(err); }
+  b.disabled = false; b.textContent = "Import Apple Card";
+};
+// ---- portfolio (phase 4b)
+async function loadPortfolio(){
+  const p = await api("/api/portfolio?new_money=" + (Number($("pfnew").value) || 0));
+  const k = $("pfkpis"); k.innerHTML = "";
+  const g = p.gains || {};
+  k.append(kpi("Total in brokerage", fmt(p.total)), kpi("Invested", fmt(p.invested)), kpi("Cash (e.g. SPAXX)", fmt(p.cash)),
+           kpi("Unrealized gain", g.gain == null ? "-" : fmt(g.gain) + (g.gain_pct == null ? "" : " (" + g.gain_pct + "%)"), g.gain < 0 ? "neg" : ""));
+  table($("pfalloc"), [["Bucket"],["Value",1],["Now",1],["Target",1],["Drift",1]],
+        p.allocation.map(r => [r.label, fmt(r.value), r.pct + "%", r.target_pct == null ? "-" : r.target_pct + "%",
+                               r.drift == null ? "" : (r.drift > 0 ? "+" : "") + r.drift.toFixed(1)]));
+  $("pfwarn").innerHTML = "";
+  if(!p.positions.length) $("pfwarn").appendChild(el("div", "No invested positions yet - this fills in once money is invested.", "note"));
+  p.warnings.forEach(w => $("pfwarn").appendChild(el("div", w, "note")));
+  table($("pfpos"), [["Ticker"],["Name"],["Account"],["Shares",1],["Price",1],["Value",1],["Cost basis",1]],
+        p.positions.map(x => [x.ticker || "", x.name, x.account, x.quantity.toLocaleString("en-US",{maximumFractionDigits:4}), fmt(x.price), fmt(x.value), fmt(x.cost_basis)]));
+  table($("pfplan"), [["Amount",1],["Bucket"],["For example"],["Note"]],
+        p.buy_plan.map(r => [fmt(r.amount), r.label, r.suggest, r.note || ""]));
+}
+async function loadRisk(){
+  const r = await api("/api/risk?new_money=" + (Number($("pfnew").value) || 0));
+  const w = r.runway, k = $("rkkpis"); k.innerHTML = "";
+  k.append(kpi("Cash (net of cards)", fmt(w.liquid), w.liquid < 0 ? "neg" : ""),
+           kpi("Months covered, no income", w.months_no_income == null ? "-" : String(w.months_no_income)),
+           kpi("Months if sponsor paused", w.months_without_sponsor == null ? "n/a" : String(w.months_without_sponsor)),
+           kpi("Cash after bills (6 mo)", fmt(w.cash_after_planned_bills), w.cash_after_planned_bills < 0 ? "neg" : ""));
+  table($("rkstress"), [["Scenario"],["Loss",1],["%",1],["Value after",1],["Recovery (history)"]],
+        r.stress.map(s => [s.scenario, fmt(s.loss), s.loss_pct + "%", fmt(s.value_after), s.recovery]));
+  $("rkflags").innerHTML = ""; r.flags.forEach(f => $("rkflags").appendChild(el("div", f, "note")));
+  const v = r.volatility;
+  $("rkvol").textContent = v && v.annual_volatility_pct != null ? "Estimated volatility about " + v.annual_volatility_pct +
+    "% a year; a 1-in-20 bad year is about " + v.one_in_20_bad_year_pct + "% (" + fmt(v.one_in_20_bad_year_dollars) + "). " + r.notes[0] : r.notes[0];
+}
+$("pfnew").onchange = () => Promise.all([loadPortfolio(), loadRisk()]).catch(showErr);
+function showErr(err){ alert(err.message || err); }
+async function refreshAll(){ await Promise.all([loadOverview(), loadCashflow(), loadPlanned(), loadRules(), loadPortfolio(), loadRisk()]); }
+refreshAll().catch(showErr);
+</script>
+</body></html>
