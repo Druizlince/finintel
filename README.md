@@ -1,4 +1,4 @@
-# finintel
+# Finintel
 
 **A private, security-first personal finance & investment intelligence system — with a Claude (MCP) connector.**
 
