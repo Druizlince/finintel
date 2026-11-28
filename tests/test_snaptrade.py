@@ -115,3 +115,28 @@ def test_sync_error_is_recorded_and_redacted(engine):
             raise RuntimeError("401 Unauthorized consumer_key=ABCDEF123")
     res = run_snaptrade_sync(engine, Broken())
     assert "ABCDEF123" not in res[-1]["error"]
+
+
+def test_map_position_new_instrument_format():
+    from fin.providers.snaptrade_mapping import map_position
+    raw = {"instrument": {"kind": "equity", "id": "x", "symbol": "NVDA", "raw_symbol": "NVDA",
+                          "description": "NVIDIA Corp", "currency": "USD", "exchange": "NASDAQ",
+                          "figi_instrument": {}},
+           "units": "3.093", "price": "150.00", "cost_basis": "399.92", "currency": "USD",
+           "cash_equivalent": False}
+    p = map_position(raw)
+    assert p["security"]["ticker"] == "NVDA" and p["security"]["type"] == "stock"
+    assert str(p["quantity"]) == "3.093"
+    assert p["market_value"] == p["quantity"] * p["price"]
+    assert str(p["cost_basis"]) == "399.92"          # treated as a total
+
+
+def test_map_position_new_format_per_share_cost_and_cash_skip():
+    from decimal import Decimal
+    from fin.providers.snaptrade_mapping import map_position
+    raw = {"instrument": {"kind": "etf", "symbol": "VTI"}, "units": "2", "price": "350",
+           "cost_basis": "340", "cash_equivalent": False}
+    assert map_position(raw)["cost_basis"] == Decimal("680")   # per-share average x units
+    cash = {"instrument": {"kind": "money_market", "symbol": "SPAXX"}, "units": "4.65",
+            "price": "1", "cost_basis": "4.65", "cash_equivalent": True}
+    assert map_position(cash) is None

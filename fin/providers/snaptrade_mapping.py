@@ -112,7 +112,61 @@ def map_security(sym: Mapping[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+INSTRUMENT_KINDS = {
+    "equity": "stock", "stock": "stock", "common_stock": "stock", "adr": "stock",
+    "etf": "etf", "etn": "etf", "mutual_fund": "mutual_fund", "fund": "mutual_fund",
+    "money_market": "mutual_fund", "bond": "bond", "fixed_income": "bond",
+    "crypto": "crypto", "cryptocurrency": "crypto", "option": "option",
+}
+
+
+def _instrument_security(inst: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Newer positions format: position.instrument = {kind, symbol, raw_symbol, description, currency}."""
+    ticker = inst.get("symbol") or inst.get("raw_symbol")
+    if not ticker:
+        return None
+    currency = inst.get("currency")
+    return {
+        "ticker": str(ticker).upper(),
+        "name": inst.get("description") or str(ticker),
+        "type": INSTRUMENT_KINDS.get(str(inst.get("kind") or "").lower(), "other"),
+        "currency": (currency.get("code") if isinstance(currency, Mapping) else currency) or "USD",
+    }
+
+
+def _total_cost(raw: Decimal | None, units: Decimal, price: Decimal | None) -> Decimal | None:
+    """The newer format's `cost_basis` may be a total or a per-share average; pick the one that
+    is closer to the position's market value."""
+    if raw is None:
+        return None
+    if price is None or units == 0 or price == 0:
+        return raw
+    value = units * price
+    as_total = abs(raw - value) / value
+    as_avg = abs(raw * units - value) / value
+    return raw if as_total <= as_avg else raw * units
+
+
 def map_position(p: Mapping[str, Any]) -> dict[str, Any] | None:
+    inst = p.get("instrument")
+    if isinstance(inst, Mapping):
+        # Newer SnapTrade positions format. Cash sweep (e.g. SPAXX) is skipped: it is already
+        # counted in the account's cash balance, so keeping it would double count.
+        if p.get("cash_equivalent") is True:
+            return None
+        sec = _instrument_security(inst)
+        units = dec(p.get("units"))
+        if sec is None or units is None:
+            return None
+        price = dec(p.get("price"))
+        return {
+            "security": sec,
+            "quantity": units,
+            "price": price,
+            "market_value": (units * price) if price is not None else None,
+            "cost_basis": _total_cost(dec(p.get("cost_basis")), units, price),
+        }
+
     sec = map_security(dig(p, "symbol", "symbol"))
     units = dec(p.get("units"))
     if units is None:
